@@ -604,15 +604,24 @@ class AreaScreenshot {
         return;
       }
 
+      // 获取设备像素比，用于高DPI屏幕
+      const dpr = window.devicePixelRatio || 1;
+
       const img = new Image();
       img.onload = () => {
+        // 将 CSS 像素转换为物理像素
+        const px = Math.round(x * dpr);
+        const py = Math.round(y * dpr);
+        const pwidth = Math.round(width * dpr);
+        const pheight = Math.round(height * dpr);
+
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(width);
         canvas.height = Math.round(height);
         const ctx = canvas.getContext('2d');
 
-        // 使用 Math.round 确保整数坐标
-        ctx.drawImage(img, Math.round(x), Math.round(y), Math.round(width), Math.round(height), 0, 0, Math.round(width), Math.round(height));
+        // 从物理像素截图中裁剪，缩放回 CSS 像素尺寸
+        ctx.drawImage(img, px, py, pwidth, pheight, 0, 0, Math.round(width), Math.round(height));
 
         const croppedDataUrl = canvas.toDataURL('image/png');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
