@@ -243,12 +243,19 @@ window.screenshotCapture = new ScreenshotCapture();
 class AreaScreenshot {
   constructor() {
     this.isSelecting = false;
+    this.isAdjusting = false;
     this.overlay = null;
     this.selectionBox = null;
+    this.handles = [];
+    this.confirmBtn = null;
     this.startX = 0;
     this.startY = 0;
     this.endX = 0;
     this.endY = 0;
+    this.currentHandle = null;
+    this.boundMouseMove = this.onMouseMove.bind(this);
+    this.boundMouseUp = this.onMouseUp.bind(this);
+    this.boundKeyDown = this.onKeyDown.bind(this);
   }
 
   createOverlay() {
@@ -267,23 +274,39 @@ class AreaScreenshot {
       user-select: none;
     `;
 
-    // 创建选框
+    // 创建选框容器
     this.selectionBox = document.createElement('div');
     this.selectionBox.id = 'area-screenshot-selection';
     this.selectionBox.style.cssText = `
       position: fixed;
       border: 2px solid #007AFF;
-      background: rgba(0, 122, 255, 0.15);
-      pointer-events: none;
+      background: rgba(0, 122, 255, 0.1);
       display: none;
       z-index: 1000000;
       box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);
     `;
 
+    // 创建尺寸显示
+    this.sizeLabel = document.createElement('div');
+    this.sizeLabel.id = 'area-screenshot-size';
+    this.sizeLabel.style.cssText = `
+      position: absolute;
+      top: -25px;
+      left: 0;
+      background: #007AFF;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      pointer-events: none;
+    `;
+    this.selectionBox.appendChild(this.sizeLabel);
+
     // 创建提示文字
     const hint = document.createElement('div');
     hint.id = 'area-screenshot-hint';
-    hint.textContent = '拖拽选择截图区域，按 ESC 取消';
+    hint.innerHTML = '拖拽选择区域<br>松开后可调整，按 ESC 取消，点击 ✓ 确认';
     hint.style.cssText = `
       position: fixed;
       top: 20px;
@@ -291,11 +314,13 @@ class AreaScreenshot {
       transform: translateX(-50%);
       background: rgba(0, 0, 0, 0.8);
       color: white;
-      padding: 10px 20px;
-      border-radius: 20px;
+      padding: 12px 24px;
+      border-radius: 8px;
       font-size: 14px;
       z-index: 1000001;
       pointer-events: none;
+      text-align: center;
+      line-height: 1.5;
     `;
 
     document.body.appendChild(this.overlay);
@@ -304,9 +329,71 @@ class AreaScreenshot {
 
     // 绑定事件
     this.overlay.addEventListener('mousedown', this.onMouseDown.bind(this));
-    document.addEventListener('mousemove', this.onMouseMove.bind(this));
-    document.addEventListener('mouseup', this.onMouseUp.bind(this));
-    document.addEventListener('keydown', this.onKeyDown.bind(this));
+    document.addEventListener('keydown', this.boundKeyDown);
+  }
+
+  createHandles() {
+    // 8个调整手柄：四个角 + 四条边中点
+    const handlePositions = [
+      { name: 'nw', cursor: 'nw-resize', left: '-4px', top: '-4px' },
+      { name: 'n', cursor: 'n-resize', left: '50%', top: '-4px', transform: 'translateX(-50%)' },
+      { name: 'ne', cursor: 'ne-resize', right: '-4px', top: '-4px' },
+      { name: 'w', cursor: 'w-resize', left: '-4px', top: '50%', transform: 'translateY(-50%)' },
+      { name: 'e', cursor: 'e-resize', right: '-4px', top: '50%', transform: 'translateY(-50%)' },
+      { name: 'sw', cursor: 'sw-resize', left: '-4px', bottom: '-4px' },
+      { name: 's', cursor: 's-resize', left: '50%', bottom: '-4px', transform: 'translateX(-50%)' },
+      { name: 'se', cursor: 'se-resize', right: '-4px', bottom: '-4px' }
+    ];
+
+    this.handles = [];
+    handlePositions.forEach(pos => {
+      const handle = document.createElement('div');
+      handle.className = 'area-screenshot-handle';
+      handle.dataset.handle = pos.name;
+      handle.style.cssText = `
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        background: #007AFF;
+        border: 2px solid white;
+        border-radius: 50%;
+        cursor: ${pos.cursor};
+        z-index: 1000002;
+        ${pos.left ? `left: ${pos.left};` : ''}
+        ${pos.right ? `right: ${pos.right};` : ''}
+        ${pos.top ? `top: ${pos.top};` : ''}
+        ${pos.bottom ? `bottom: ${pos.bottom};` : ''}
+        ${pos.transform ? `transform: ${pos.transform};` : ''}
+      `;
+      handle.addEventListener('mousedown', this.onHandleMouseDown.bind(this));
+      this.selectionBox.appendChild(handle);
+      this.handles.push(handle);
+    });
+
+    // 创建确认按钮
+    this.confirmBtn = document.createElement('button');
+    this.confirmBtn.id = 'area-screenshot-confirm';
+    this.confirmBtn.innerHTML = '✓';
+    this.confirmBtn.style.cssText = `
+      position: absolute;
+      right: -40px;
+      bottom: -40px;
+      width: 32px;
+      height: 32px;
+      background: #34C759;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 1000002;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    `;
+    this.confirmBtn.addEventListener('click', this.onConfirm.bind(this));
+    this.selectionBox.appendChild(this.confirmBtn);
   }
 
   removeOverlay() {
@@ -321,13 +408,17 @@ class AreaScreenshot {
     const hint = document.getElementById('area-screenshot-hint');
     if (hint) hint.remove();
 
-    document.removeEventListener('mousemove', this.onMouseMove.bind(this));
-    document.removeEventListener('mouseup', this.onMouseUp.bind(this));
-    document.removeEventListener('keydown', this.onKeyDown.bind(this));
+    document.removeEventListener('mousemove', this.boundMouseMove);
+    document.removeEventListener('mouseup', this.boundMouseUp);
+    document.removeEventListener('keydown', this.boundKeyDown);
   }
 
   onMouseDown(e) {
-    if (e.button !== 0) return; // 只响应左键
+    if (e.button !== 0) return;
+    
+    // 如果已经在调整模式，不要重新创建选区
+    if (this.selectionBox.style.display === 'block') return;
+    
     this.isSelecting = true;
     this.startX = e.clientX;
     this.startY = e.clientY;
@@ -335,35 +426,120 @@ class AreaScreenshot {
     this.endY = e.clientY;
     this.updateSelectionBox();
     this.selectionBox.style.display = 'block';
+
+    document.addEventListener('mousemove', this.boundMouseMove);
+    document.addEventListener('mouseup', this.boundMouseUp);
   }
 
   onMouseMove(e) {
-    if (!this.isSelecting) return;
-    this.endX = e.clientX;
-    this.endY = e.clientY;
-    this.updateSelectionBox();
+    if (this.isAdjusting && this.currentHandle) {
+      this.adjustSelection(e);
+    } else if (this.isSelecting) {
+      this.endX = e.clientX;
+      this.endY = e.clientY;
+      this.updateSelectionBox();
+    }
   }
 
   onMouseUp(e) {
+    if (this.isAdjusting) {
+      this.isAdjusting = false;
+      this.currentHandle = null;
+      return;
+    }
+
     if (!this.isSelecting) return;
     this.isSelecting = false;
-    this.endX = e.clientX;
-    this.endY = e.clientY;
 
-    // 计算选区
-    const left = Math.min(this.startX, this.endX);
-    const top = Math.min(this.startY, this.endY);
     const width = Math.abs(this.endX - this.startX);
     const height = Math.abs(this.endY - this.startY);
 
-    // 如果选区太小，认为是误操作，取消截图
+    // 如果选区太小，取消
     if (width < 10 || height < 10) {
       this.cancel();
       return;
     }
 
-    // 执行截图
-    this.captureArea(left, top, width, height);
+    // 创建调整手柄和确认按钮
+    this.createHandles();
+    
+    // 更新提示
+    const hint = document.getElementById('area-screenshot-hint');
+    if (hint) {
+      hint.innerHTML = '拖拽边框或角落调整大小<br>按 ESC 取消，点击 ✓ 确认截图';
+    }
+  }
+
+  onHandleMouseDown(e) {
+    e.stopPropagation();
+    this.isAdjusting = true;
+    this.currentHandle = e.target.dataset.handle;
+    this.adjustStartX = e.clientX;
+    this.adjustStartY = e.clientY;
+    this.adjustStartBounds = this.getSelectionBounds();
+  }
+
+  adjustSelection(e) {
+    const dx = e.clientX - this.adjustStartX;
+    const dy = e.clientY - this.adjustStartY;
+    const bounds = { ...this.adjustStartBounds };
+
+    switch (this.currentHandle) {
+      case 'se':
+        bounds.width = Math.max(10, this.adjustStartBounds.width + dx);
+        bounds.height = Math.max(10, this.adjustStartBounds.height + dy);
+        break;
+      case 'sw':
+        bounds.width = Math.max(10, this.adjustStartBounds.width - dx);
+        bounds.height = Math.max(10, this.adjustStartBounds.height + dy);
+        bounds.left = this.adjustStartBounds.left + dx;
+        break;
+      case 'ne':
+        bounds.width = Math.max(10, this.adjustStartBounds.width + dx);
+        bounds.height = Math.max(10, this.adjustStartBounds.height - dy);
+        bounds.top = this.adjustStartBounds.top + dy;
+        break;
+      case 'nw':
+        bounds.width = Math.max(10, this.adjustStartBounds.width - dx);
+        bounds.height = Math.max(10, this.adjustStartBounds.height - dy);
+        bounds.left = this.adjustStartBounds.left + dx;
+        bounds.top = this.adjustStartBounds.top + dy;
+        break;
+      case 'n':
+        bounds.height = Math.max(10, this.adjustStartBounds.height - dy);
+        bounds.top = this.adjustStartBounds.top + dy;
+        break;
+      case 's':
+        bounds.height = Math.max(10, this.adjustStartBounds.height + dy);
+        break;
+      case 'w':
+        bounds.width = Math.max(10, this.adjustStartBounds.width - dx);
+        bounds.left = this.adjustStartBounds.left + dx;
+        break;
+      case 'e':
+        bounds.width = Math.max(10, this.adjustStartBounds.width + dx);
+        break;
+    }
+
+    this.startX = bounds.left;
+    this.startY = bounds.top;
+    this.endX = bounds.left + bounds.width;
+    this.endY = bounds.top + bounds.height;
+    this.updateSelectionBox();
+  }
+
+  getSelectionBounds() {
+    const left = Math.min(this.startX, this.endX);
+    const top = Math.min(this.startY, this.endY);
+    const width = Math.abs(this.endX - this.startX);
+    const height = Math.abs(this.endY - this.startY);
+    return { left, top, width, height };
+  }
+
+  onConfirm(e) {
+    e.stopPropagation();
+    const bounds = this.getSelectionBounds();
+    this.captureArea(bounds.left, bounds.top, bounds.width, bounds.height);
   }
 
   onKeyDown(e) {
@@ -382,21 +558,22 @@ class AreaScreenshot {
     this.selectionBox.style.top = top + 'px';
     this.selectionBox.style.width = width + 'px';
     this.selectionBox.style.height = height + 'px';
+
+    if (this.sizeLabel) {
+      this.sizeLabel.textContent = `${Math.round(width)} × ${Math.round(height)}`;
+    }
   }
 
   async captureArea(x, y, width, height) {
-    // 移除遮罩
     this.removeOverlay();
 
     try {
-      // 截取整个可见区域
       const dataUrl = await window.screenshotCapture.captureVisibleTab();
       if (!dataUrl) {
         this.notifyComplete(false);
         return;
       }
 
-      // 使用 canvas 裁剪选区
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -404,16 +581,9 @@ class AreaScreenshot {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
 
-        // 裁剪指定区域
-        ctx.drawImage(
-          img,
-          x, y, width, height,  // 源图像裁剪区域
-          0, 0, width, height   // 目标 canvas 绘制区域
-        );
+        ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
 
         const croppedDataUrl = canvas.toDataURL('image/png');
-
-        // 下载截图
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const filename = `area_screenshot_${timestamp}.png`;
         window.screenshotCapture.downloadImage(filename, croppedDataUrl);
