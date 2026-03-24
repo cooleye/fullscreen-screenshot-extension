@@ -239,6 +239,213 @@ class ScreenshotCapture {
 
 window.screenshotCapture = new ScreenshotCapture();
 
+// 区域截图功能
+class AreaScreenshot {
+  constructor() {
+    this.isSelecting = false;
+    this.overlay = null;
+    this.selectionBox = null;
+    this.startX = 0;
+    this.startY = 0;
+    this.endX = 0;
+    this.endY = 0;
+  }
+
+  createOverlay() {
+    // 创建遮罩层
+    this.overlay = document.createElement('div');
+    this.overlay.id = 'area-screenshot-overlay';
+    this.overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.3);
+      cursor: crosshair;
+      z-index: 999999;
+      user-select: none;
+    `;
+
+    // 创建选框
+    this.selectionBox = document.createElement('div');
+    this.selectionBox.id = 'area-screenshot-selection';
+    this.selectionBox.style.cssText = `
+      position: fixed;
+      border: 2px solid #007AFF;
+      background: rgba(0, 122, 255, 0.15);
+      pointer-events: none;
+      display: none;
+      z-index: 1000000;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);
+    `;
+
+    // 创建提示文字
+    const hint = document.createElement('div');
+    hint.id = 'area-screenshot-hint';
+    hint.textContent = '拖拽选择截图区域，按 ESC 取消';
+    hint.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 14px;
+      z-index: 1000001;
+      pointer-events: none;
+    `;
+
+    document.body.appendChild(this.overlay);
+    document.body.appendChild(this.selectionBox);
+    document.body.appendChild(hint);
+
+    // 绑定事件
+    this.overlay.addEventListener('mousedown', this.onMouseDown.bind(this));
+    document.addEventListener('mousemove', this.onMouseMove.bind(this));
+    document.addEventListener('mouseup', this.onMouseUp.bind(this));
+    document.addEventListener('keydown', this.onKeyDown.bind(this));
+  }
+
+  removeOverlay() {
+    if (this.overlay) {
+      this.overlay.remove();
+      this.overlay = null;
+    }
+    if (this.selectionBox) {
+      this.selectionBox.remove();
+      this.selectionBox = null;
+    }
+    const hint = document.getElementById('area-screenshot-hint');
+    if (hint) hint.remove();
+
+    document.removeEventListener('mousemove', this.onMouseMove.bind(this));
+    document.removeEventListener('mouseup', this.onMouseUp.bind(this));
+    document.removeEventListener('keydown', this.onKeyDown.bind(this));
+  }
+
+  onMouseDown(e) {
+    if (e.button !== 0) return; // 只响应左键
+    this.isSelecting = true;
+    this.startX = e.clientX;
+    this.startY = e.clientY;
+    this.endX = e.clientX;
+    this.endY = e.clientY;
+    this.updateSelectionBox();
+    this.selectionBox.style.display = 'block';
+  }
+
+  onMouseMove(e) {
+    if (!this.isSelecting) return;
+    this.endX = e.clientX;
+    this.endY = e.clientY;
+    this.updateSelectionBox();
+  }
+
+  onMouseUp(e) {
+    if (!this.isSelecting) return;
+    this.isSelecting = false;
+    this.endX = e.clientX;
+    this.endY = e.clientY;
+
+    // 计算选区
+    const left = Math.min(this.startX, this.endX);
+    const top = Math.min(this.startY, this.endY);
+    const width = Math.abs(this.endX - this.startX);
+    const height = Math.abs(this.endY - this.startY);
+
+    // 如果选区太小，认为是误操作，取消截图
+    if (width < 10 || height < 10) {
+      this.cancel();
+      return;
+    }
+
+    // 执行截图
+    this.captureArea(left, top, width, height);
+  }
+
+  onKeyDown(e) {
+    if (e.key === 'Escape') {
+      this.cancel();
+    }
+  }
+
+  updateSelectionBox() {
+    const left = Math.min(this.startX, this.endX);
+    const top = Math.min(this.startY, this.endY);
+    const width = Math.abs(this.endX - this.startX);
+    const height = Math.abs(this.endY - this.startY);
+
+    this.selectionBox.style.left = left + 'px';
+    this.selectionBox.style.top = top + 'px';
+    this.selectionBox.style.width = width + 'px';
+    this.selectionBox.style.height = height + 'px';
+  }
+
+  async captureArea(x, y, width, height) {
+    // 移除遮罩
+    this.removeOverlay();
+
+    try {
+      // 截取整个可见区域
+      const dataUrl = await window.screenshotCapture.captureVisibleTab();
+      if (!dataUrl) {
+        this.notifyComplete(false);
+        return;
+      }
+
+      // 使用 canvas 裁剪选区
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        // 裁剪指定区域
+        ctx.drawImage(
+          img,
+          x, y, width, height,  // 源图像裁剪区域
+          0, 0, width, height   // 目标 canvas 绘制区域
+        );
+
+        const croppedDataUrl = canvas.toDataURL('image/png');
+
+        // 下载截图
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `area_screenshot_${timestamp}.png`;
+        window.screenshotCapture.downloadImage(filename, croppedDataUrl);
+
+        this.notifyComplete(true);
+      };
+      img.src = dataUrl;
+    } catch (error) {
+      console.error('[AreaScreenshot] Capture error:', error);
+      this.notifyComplete(false);
+    }
+  }
+
+  cancel() {
+    this.removeOverlay();
+    this.notifyComplete(false);
+  }
+
+  notifyComplete(success) {
+    chrome.runtime.sendMessage({
+      action: 'areaSelectionComplete',
+      success: success
+    });
+  }
+
+  start() {
+    this.createOverlay();
+  }
+}
+
+window.areaScreenshot = new AreaScreenshot();
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[ScreenshotCapture] Received:', request.action);
 
@@ -250,6 +457,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case 'stopCapture':
       window.screenshotCapture.stop();
+      sendResponse({ success: true });
+      break;
+
+    case 'startAreaSelection':
+      window.areaScreenshot.start();
       sendResponse({ success: true });
       break;
 

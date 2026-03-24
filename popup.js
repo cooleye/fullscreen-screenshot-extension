@@ -3,6 +3,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
+  const areaBtn = document.getElementById('areaBtn');
   const statusText = document.getElementById('statusText');
   const statusIcon = document.getElementById('statusIcon');
   const progressBar = document.getElementById('progressBar');
@@ -13,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const initialTime = document.getElementById('initialTime');
 
   let isCapturing = false;
+  let isAreaSelecting = false;
 
   // 设置初始时间
   initialTime.textContent = new Date().toLocaleTimeString('zh-CN', { 
@@ -123,8 +125,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateButtons(capturing) {
     isCapturing = capturing;
-    startBtn.disabled = capturing;
+    startBtn.disabled = capturing || isAreaSelecting;
     stopBtn.disabled = !capturing;
+    areaBtn.disabled = capturing || isAreaSelecting;
     fullscreenToggle.disabled = capturing;
     
     // 更新按钮文字
@@ -138,6 +141,44 @@ document.addEventListener('DOMContentLoaded', () => {
         <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
         开始截图
       `;
+    }
+  }
+
+  async function startAreaCapture() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab) {
+        addLog('无法获取当前标签页', 'error');
+        return;
+      }
+
+      isAreaSelecting = true;
+      updateButtons(false);
+      areaBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+        选择区域中...
+      `;
+      addLog('请在页面上拖拽选择截图区域', 'info');
+      updateStatus('starting', '请选择区域...');
+
+      chrome.tabs.sendMessage(tab.id, { action: 'startAreaSelection' }, (response) => {
+        if (chrome.runtime.lastError) {
+          addLog('页面未加载，请刷新后重试', 'error');
+          isAreaSelecting = false;
+          updateButtons(false);
+          areaBtn.innerHTML = `
+            <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/></svg>
+            区域截图
+          `;
+          updateStatus('error', '启动失败');
+        }
+      });
+
+    } catch (error) {
+      addLog('启动失败: ' + error.message, 'error');
+      isAreaSelecting = false;
+      updateButtons(false);
     }
   }
 
@@ -190,11 +231,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (request.action === 'updateProgress') {
       const { status, message } = request;
       updateStatus(status, message);
+    } else if (request.action === 'areaSelectionComplete') {
+      // 区域选择完成
+      isAreaSelecting = false;
+      updateButtons(false);
+      areaBtn.innerHTML = `
+        <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/></svg>
+        区域截图
+      `;
+      if (request.success) {
+        addLog('区域截图已保存', 'success');
+        updateStatus('complete', '截图完成');
+      } else {
+        addLog('区域截图取消或失败', 'error');
+        updateStatus('ready', '就绪');
+      }
     }
   });
 
   startBtn.addEventListener('click', startCapture);
   stopBtn.addEventListener('click', stopCapture);
+  areaBtn.addEventListener('click', startAreaCapture);
 
   // 添加旋转动画样式
   const style = document.createElement('style');
