@@ -574,6 +574,14 @@ class AreaScreenshot {
         return;
       }
 
+      // 获取当前滚动位置，修正坐标
+      const scrollX = window.scrollX || window.pageXOffset;
+      const scrollY = window.scrollY || window.pageYOffset;
+      
+      // 将页面坐标转换为相对于可见区域的坐标
+      const relativeX = x - scrollX;
+      const relativeY = y - scrollY;
+
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -581,7 +589,8 @@ class AreaScreenshot {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
 
-        ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
+        // 使用相对于可见区域的坐标进行裁剪
+        ctx.drawImage(img, relativeX, relativeY, width, height, 0, 0, width, height);
 
         const croppedDataUrl = canvas.toDataURL('image/png');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
