@@ -274,12 +274,12 @@ class AreaScreenshot {
       user-select: none;
     `;
 
-    // 创建选框容器
+    // 创建选框容器 - 使用 outline 而不是 border，避免影响尺寸计算
     this.selectionBox = document.createElement('div');
     this.selectionBox.id = 'area-screenshot-selection';
     this.selectionBox.style.cssText = `
       position: fixed;
-      border: 2px solid #007AFF;
+      outline: 2px solid #007AFF;
       background: rgba(0, 122, 255, 0.1);
       display: none;
       z-index: 1000000;
@@ -291,22 +291,23 @@ class AreaScreenshot {
     this.sizeLabel.id = 'area-screenshot-size';
     this.sizeLabel.style.cssText = `
       position: absolute;
-      top: -25px;
+      top: -28px;
       left: 0;
       background: #007AFF;
       color: white;
-      padding: 2px 8px;
+      padding: 3px 10px;
       border-radius: 4px;
       font-size: 12px;
       white-space: nowrap;
       pointer-events: none;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     `;
     this.selectionBox.appendChild(this.sizeLabel);
 
     // 创建提示文字
     const hint = document.createElement('div');
     hint.id = 'area-screenshot-hint';
-    hint.innerHTML = '拖拽选择区域<br>松开后可调整，按 ESC 取消，点击 ✓ 确认';
+    hint.innerHTML = '拖拽选择区域，松开后可调整';
     hint.style.cssText = `
       position: fixed;
       top: 20px;
@@ -333,16 +334,16 @@ class AreaScreenshot {
   }
 
   createHandles() {
-    // 8个调整手柄：四个角 + 四条边中点
+    // 8个调整手柄
     const handlePositions = [
-      { name: 'nw', cursor: 'nw-resize', left: '-4px', top: '-4px' },
-      { name: 'n', cursor: 'n-resize', left: '50%', top: '-4px', transform: 'translateX(-50%)' },
-      { name: 'ne', cursor: 'ne-resize', right: '-4px', top: '-4px' },
-      { name: 'w', cursor: 'w-resize', left: '-4px', top: '50%', transform: 'translateY(-50%)' },
-      { name: 'e', cursor: 'e-resize', right: '-4px', top: '50%', transform: 'translateY(-50%)' },
-      { name: 'sw', cursor: 'sw-resize', left: '-4px', bottom: '-4px' },
-      { name: 's', cursor: 's-resize', left: '50%', bottom: '-4px', transform: 'translateX(-50%)' },
-      { name: 'se', cursor: 'se-resize', right: '-4px', bottom: '-4px' }
+      { name: 'nw', cursor: 'nw-resize', left: '-5px', top: '-5px' },
+      { name: 'n', cursor: 'n-resize', left: '50%', top: '-5px', transform: 'translateX(-50%)' },
+      { name: 'ne', cursor: 'ne-resize', right: '-5px', top: '-5px' },
+      { name: 'w', cursor: 'w-resize', left: '-5px', top: '50%', transform: 'translateY(-50%)' },
+      { name: 'e', cursor: 'e-resize', right: '-5px', top: '50%', transform: 'translateY(-50%)' },
+      { name: 'sw', cursor: 'sw-resize', left: '-5px', bottom: '-5px' },
+      { name: 's', cursor: 's-resize', left: '50%', bottom: '-5px', transform: 'translateX(-50%)' },
+      { name: 'se', cursor: 'se-resize', right: '-5px', bottom: '-5px' }
     ];
 
     this.handles = [];
@@ -352,13 +353,14 @@ class AreaScreenshot {
       handle.dataset.handle = pos.name;
       handle.style.cssText = `
         position: absolute;
-        width: 8px;
-        height: 8px;
+        width: 10px;
+        height: 10px;
         background: #007AFF;
         border: 2px solid white;
         border-radius: 50%;
         cursor: ${pos.cursor};
         z-index: 1000002;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         ${pos.left ? `left: ${pos.left};` : ''}
         ${pos.right ? `right: ${pos.right};` : ''}
         ${pos.top ? `top: ${pos.top};` : ''}
@@ -376,15 +378,15 @@ class AreaScreenshot {
     this.confirmBtn.innerHTML = '✓';
     this.confirmBtn.style.cssText = `
       position: absolute;
-      right: -40px;
-      bottom: -40px;
-      width: 32px;
-      height: 32px;
+      right: -45px;
+      bottom: -45px;
+      width: 36px;
+      height: 36px;
       background: #34C759;
       color: white;
       border: none;
       border-radius: 50%;
-      font-size: 18px;
+      font-size: 20px;
       cursor: pointer;
       z-index: 1000002;
       display: flex;
@@ -466,7 +468,7 @@ class AreaScreenshot {
     // 更新提示
     const hint = document.getElementById('area-screenshot-hint');
     if (hint) {
-      hint.innerHTML = '拖拽边框或角落调整大小<br>按 ESC 取消，点击 ✓ 确认截图';
+      hint.innerHTML = '拖拽手柄调整，点击 ✓ 确认，ESC 取消';
     }
   }
 
@@ -529,6 +531,17 @@ class AreaScreenshot {
   }
 
   getSelectionBounds() {
+    // 使用 getBoundingClientRect 获取精确的视口坐标
+    if (this.selectionBox) {
+      const rect = this.selectionBox.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      };
+    }
+    // 回退到计算值
     const left = Math.min(this.startX, this.endX);
     const top = Math.min(this.startY, this.endY);
     const width = Math.abs(this.endX - this.startX);
@@ -538,8 +551,9 @@ class AreaScreenshot {
 
   onConfirm(e) {
     e.stopPropagation();
-    const bounds = this.getSelectionBounds();
-    this.captureArea(bounds.left, bounds.top, bounds.width, bounds.height);
+    // 使用 getBoundingClientRect 获取精确的视口坐标和尺寸
+    const rect = this.selectionBox.getBoundingClientRect();
+    this.captureArea(rect.left, rect.top, rect.width, rect.height);
   }
 
   onKeyDown(e) {
@@ -565,31 +579,40 @@ class AreaScreenshot {
   }
 
   async captureArea(x, y, width, height) {
-    // 先移除选框和遮罩，等待浏览器重绘
-    this.removeOverlay();
+    // 先隐藏选框（不移除），等待浏览器重绘
+    if (this.selectionBox) {
+      this.selectionBox.style.display = 'none';
+    }
+    if (this.overlay) {
+      this.overlay.style.display = 'none';
+    }
+    const hint = document.getElementById('area-screenshot-hint');
+    if (hint) hint.style.display = 'none';
     
-    // 等待一帧确保选框消失
+    // 等待浏览器重绘完成
     await new Promise(resolve => requestAnimationFrame(resolve));
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 150));
 
     try {
       const dataUrl = await window.screenshotCapture.captureVisibleTab();
+      
+      // 截图完成后清理
+      this.removeOverlay();
+      
       if (!dataUrl) {
         this.notifyComplete(false);
         return;
       }
 
-      // clientX/Y 是视口坐标，captureVisibleTab 截取的也是视口内容
-      // 所以直接使用 x, y 即可，不需要滚动偏移修正
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = Math.round(width);
+        canvas.height = Math.round(height);
         const ctx = canvas.getContext('2d');
 
-        // 从截图中裁剪选区
-        ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
+        // 使用 Math.round 确保整数坐标
+        ctx.drawImage(img, Math.round(x), Math.round(y), Math.round(width), Math.round(height), 0, 0, Math.round(width), Math.round(height));
 
         const croppedDataUrl = canvas.toDataURL('image/png');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -601,6 +624,7 @@ class AreaScreenshot {
       img.src = dataUrl;
     } catch (error) {
       console.error('[AreaScreenshot] Capture error:', error);
+      this.removeOverlay();
       this.notifyComplete(false);
     }
   }
