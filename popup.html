@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>全屏截图器</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --ios-blue: #007AFF;
+      --ios-green: #34C759;
+      --ios-orange: #FF9500;
+      --ios-red: #FF3B30;
+      --ios-gray: #8E8E93;
+      --ios-light-gray: #F2F2F7;
+      --ios-bg: #F5F5F7;
+      --ios-card: #FFFFFF;
+      --ios-text: #1C1C1E;
+      --ios-text-secondary: #8E8E93;
+    }
+
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      background: var(--ios-bg);
+      padding: 16px;
+      color: var(--ios-text);
+    }
+
+    /* 头部区域 */
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      padding: 8px 0;
+    }
+
+    .app-icon {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%);
+      border-radius: 14px;
+      margin: 0 auto 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(0, 122, 255, 0.3);
+    }
+
+    .app-icon svg {
+      width: 28px;
+      height: 28px;
+      fill: white;
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--ios-text);
+      margin-bottom: 4px;
+      letter-spacing: -0.3px;
+    }
+
+    .header p {
+      font-size: 13px;
+      color: var(--ios-text-secondary);
+      font-weight: 400;
+    }
+
+    /* 卡片样式 */
+    .card {
+      background: var(--ios-card);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+    }
+
+    /* 设置项 */
+    .setting-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+    }
+
+    .setting-item:first-child {
+      padding-top: 0;
+    }
+
+    .setting-item:last-child {
+      padding-bottom: 0;
+    }
+
+    .setting-item + .setting-item {
+      border-top: 0.5px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .setting-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .setting-label {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--ios-text);
+    }
+
+    .setting-desc {
+      font-size: 12px;
+      color: var(--ios-text-secondary);
+    }
+
+    /* iOS风格开关 */
+    .switch {
+      position: relative;
+      width: 51px;
+      height: 31px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #E5E5EA;
+      transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 31px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 27px;
+      width: 27px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    }
+
+    input:checked + .slider {
+      background-color: var(--ios-green);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    input:disabled + .slider {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* 状态卡片 */
+    .status-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+
+    .status-icon.ready {
+      background: rgba(52, 199, 89, 0.12);
+    }
+
+    .status-icon.capturing {
+      background: rgba(0, 122, 255, 0.12);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .status-icon.complete {
+      background: rgba(52, 199, 89, 0.12);
+    }
+
+    .status-icon.error {
+      background: rgba(255, 59, 48, 0.12);
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    .status-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .status-icon.ready svg { fill: var(--ios-green); }
+    .status-icon.capturing svg { fill: var(--ios-blue); }
+    .status-icon.complete svg { fill: var(--ios-green); }
+    .status-icon.error svg { fill: var(--ios-red); }
+
+    .status-content {
+      flex: 1;
+    }
+
+    .status-label {
+      font-size: 13px;
+      color: var(--ios-text-secondary);
+      margin-bottom: 2px;
+    }
+
+    .status-value {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--ios-text);
+    }
+
+    /* 进度条 */
+    .progress-container {
+      margin-top: 12px;
+    }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .progress-text {
+      font-size: 12px;
+      color: var(--ios-text-secondary);
+    }
+
+    .progress-percent {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ios-blue);
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 4px;
+      background: var(--ios-light-gray);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--ios-blue), #5856D6);
+      border-radius: 2px;
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 0%;
+    }
+
+    /* 按钮 */
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-primary {
+      background: var(--ios-blue);
+      color: white;
+      box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: #0056D3;
+      box-shadow: 0 6px 16px rgba(0, 122, 255, 0.4);
+    }
+
+    .btn-primary:disabled {
+      background: #C7C7CC;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--ios-light-gray);
+      color: var(--ios-text);
+    }
+
+    .btn-secondary:hover {
+      background: #E5E5EA;
+    }
+
+    .btn-secondary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
+    /* 日志区域 */
+    .log-card {
+      background: var(--ios-card);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .log-header svg {
+      width: 14px;
+      height: 14px;
+      fill: var(--ios-text-secondary);
+    }
+
+    .log-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ios-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .log-area {
+      max-height: 120px;
+      overflow-y: auto;
+      font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .log-area::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .log-area::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .log-area::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 2px;
+    }
+
+    .log-item {
+      padding: 4px 0;
+      color: var(--ios-text);
+      display: flex;
+      gap: 8px;
+    }
+
+    .log-time {
+      color: var(--ios-text-secondary);
+      flex-shrink: 0;
+    }
+
+    .log-item.success { color: var(--ios-green); }
+    .log-item.error { color: var(--ios-red); }
+    .log-item.info { color: var(--ios-blue); }
+
+    /* 底部提示 */
+    .footer-hint {
+      text-align: center;
+      padding: 8px;
+      font-size: 12px;
+      color: var(--ios-text-secondary);
+    }
+
+    .footer-hint svg {
+      width: 12px;
+      height: 12px;
+      fill: currentColor;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+  </style>
+</head>
+<body>
+  <!-- 头部 -->
+  <div class="header">
+    <div class="app-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+    </div>
+    <h1>全屏截图器</h1>
+    <p>自动滚动截图并拼接</p>
+  </div>
+
+  <!-- 设置卡片 -->
+  <div class="card">
+    <div class="setting-item">
+      <div class="setting-info">
+        <span class="setting-label">全屏滚动截图</span>
+        <span class="setting-desc">自动滚动页面并拼接</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="fullscreenToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- 状态卡片 -->
+  <div class="card">
+    <div class="status-section">
+      <div class="status-icon ready" id="statusIcon">
+        <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+      </div>
+      <div class="status-content">
+        <div class="status-label">当前状态</div>
+        <div class="status-value" id="statusText">就绪</div>
+      </div>
+    </div>
+    <div class="progress-container" id="progressContainer" style="display: none;">
+      <div class="progress-info">
+        <span class="progress-text">截图进度</span>
+        <span class="progress-percent" id="progressPercent">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressBar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 操作按钮 -->
+  <div class="button-group">
+    <button class="btn btn-primary" id="startBtn">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+      开始截图
+    </button>
+    <button class="btn btn-secondary" id="stopBtn" disabled>
+      <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+      停止截图
+    </button>
+  </div>
+
+  <!-- 日志区域 -->
+  <div class="log-card" style="margin-top: 12px;">
+    <div class="log-header">
+      <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+      <span class="log-title">运行日志</span>
+    </div>
+    <div class="log-area" id="logArea">
+      <div class="log-item">
+        <span class="log-time" id="initialTime"></span>
+        <span>插件已就绪，等待开始...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部提示 -->
+  <div class="footer-hint">
+    <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+    截图将保存到下载文件夹
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
