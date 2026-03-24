@@ -565,7 +565,12 @@ class AreaScreenshot {
   }
 
   async captureArea(x, y, width, height) {
+    // 先移除选框和遮罩，等待浏览器重绘
     this.removeOverlay();
+    
+    // 等待一帧确保选框消失
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     try {
       const dataUrl = await window.screenshotCapture.captureVisibleTab();
@@ -574,14 +579,8 @@ class AreaScreenshot {
         return;
       }
 
-      // 获取当前滚动位置，修正坐标
-      const scrollX = window.scrollX || window.pageXOffset;
-      const scrollY = window.scrollY || window.pageYOffset;
-      
-      // 将页面坐标转换为相对于可见区域的坐标
-      const relativeX = x - scrollX;
-      const relativeY = y - scrollY;
-
+      // clientX/Y 是视口坐标，captureVisibleTab 截取的也是视口内容
+      // 所以直接使用 x, y 即可，不需要滚动偏移修正
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
@@ -589,8 +588,8 @@ class AreaScreenshot {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
 
-        // 使用相对于可见区域的坐标进行裁剪
-        ctx.drawImage(img, relativeX, relativeY, width, height, 0, 0, width, height);
+        // 从截图中裁剪选区
+        ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
 
         const croppedDataUrl = canvas.toDataURL('image/png');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
